@@ -3,7 +3,7 @@ import csv
 import io
 from pathlib import Path
 
-from .common import identity, new_directory, read_json, safe_path, sha256, write_json
+from .common import identity, new_directory, read_json, safe_path, sha256, valid_id, write_json
 from .papers import load_paper, load_figure
 
 
@@ -63,19 +63,55 @@ def verify_export(directory, store=None):
     figure = result["figure"]
     if manifest["figure"] != figure or manifest["source"]["paper_id"] != figure["paper_id"]:
         raise ValueError("Manifest source linkage mismatch")
+    if identity("figure", {k: v for k, v in figure.items() if k != "figure_id"}) != figure["figure_id"]:
+        raise ValueError("Manifest figure identity mismatch")
+    if manifest["source"]["sha256"] != figure["paper_sha256"] or figure["paper_id"] != "paper_" + figure["paper_sha256"]:
+        raise ValueError("Manifest paper identity mismatch")
     if store is not None:
         registered, _ = load_figure(store, figure["figure_id"])
         if registered != figure:
             raise ValueError("Source figure snapshot mismatch")
+        _, registered_paper, _ = load_paper(store, figure["paper_id"])
+        if registered_paper != manifest["source"]:
+            raise ValueError("Source metadata differs from retained paper record")
     if len(rows) != len(result["rows"]):
         raise ValueError("Extraction row count mismatch")
     for exported, point in zip(rows, result["rows"]):
         if any(exported.get(k) != str(v) for k, v in point.items()) or exported.get("dataset_id") != result["dataset_id"]:
             raise ValueError("CSV does not match extraction evidence")
-        for k, v in {"paper_id": figure["paper_id"], "paper_sha256": figure["paper_sha256"], "page": figure["page"], "figure_id": figure["figure_id"]}.items():
+        metadata = {"paper_id": figure["paper_id"], "paper_sha256": figure["paper_sha256"], "page": figure["page"], "figure_id": figure["figure_id"],
+                    "paper_title": manifest["source"]["metadata"]["title"], "doi": manifest["source"]["metadata"].get("doi", ""),
+                    "figure_label": figure["label"], "series": result["config"]["series"],
+                    "x_label": result["config"]["x_axis"]["label"], "y_label": result["config"]["y_axis"]["label"],
+                    "extraction_method": result["extraction_method"], "review_status": result["review_status"]}
+        if set(exported) != set(point) | set(metadata) | {"dataset_id"}:
+            raise ValueError("CSV columns differ from the extraction schema")
+        for k, v in metadata.items():
             if exported.get(k) != str(v):
                 raise ValueError("CSV provenance differs from manifest")
     if read_json(Path(directory) / "auditor-config.json") != manifest["auditor_config"]:
         raise ValueError("Auditor configuration differs from manifest")
     return dict(valid=True, row_count=len(rows), dataset_id=result["dataset_id"], source_verified=store is not None,
                 note="Hashes establish internal consistency, not publisher authenticity or scientific correctness.")
+
+
+def import_dataset(store, bundle):
+    """Register a verified export so quantitative claims can cite exact extracted rows."""
+    checked = verify_export(bundle, store)
+    root = Path(store) / "datasets" / checked["dataset_id"]
+    if root.exists():
+        return load_dataset(store, checked["dataset_id"])
+    with new_directory(root) as out:
+        for name in ("dataset.csv", "manifest.json", "auditor-config.json"):
+            (out / name).write_bytes((Path(bundle) / name).read_bytes())
+        verify_export(out, store)
+    return load_dataset(store, checked["dataset_id"])
+
+
+def load_dataset(store, dataset_id):
+    valid_id(dataset_id, "dataset")
+    root = Path(store) / "datasets" / dataset_id
+    verified = verify_export(root, store)
+    if verified["dataset_id"] != dataset_id:
+        raise ValueError("Stored dataset identity mismatch")
+    return read_json(root / "manifest.json")

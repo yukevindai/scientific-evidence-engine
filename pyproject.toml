@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "scientific-evidence-engine"
-version = "0.1.0"
+version = "0.2.0"
 description = "Traceable figure digitization and evidence-grounded scientific research"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -22,4 +22,3 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-

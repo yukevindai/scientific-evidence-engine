@@ -38,6 +38,8 @@ class Axis:
             value = 10 ** value if self.scale == "log10" else value
         except OverflowError as exc:
             raise ValueError("Calibration overflows numeric range") from exc
+        if self.scale == "log10" and value == 0:
+            raise ValueError("Log calibration underflows numeric range")
         return number(value, "calibrated value")
 
     def convert(self, pixel, uncertainty):

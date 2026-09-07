@@ -9,6 +9,7 @@ def paper(tmp_path):
     path = tmp_path / "synthetic.pdf"
     c = canvas.Canvas(str(path), pagesize=(240, 200))
     c.drawString(10, 185, "Synthetic experiment: capacity decreases.")
+    c.drawString(10, 172, "Source text spans multiple lines.")
     c.setStrokeColorRGB(1, 0, 0)
     c.setLineWidth(2)
     c.line(20, 160, 200, 40)

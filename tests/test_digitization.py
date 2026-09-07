@@ -1,11 +1,13 @@
 import copy
 import json
+import csv
+import io
 
 import pytest
 
 from scientific_evidence_engine import digitize, export_dataset, verify_export, render_figure
 from scientific_evidence_engine.calibration import Axis
-from scientific_evidence_engine.common import read_json
+from scientific_evidence_engine.common import read_json, sha256
 from scientific_evidence_engine.papers import page_text
 from scientific_evidence_engine.cli import main
 
@@ -100,3 +102,42 @@ def test_changed_result_cannot_be_exported(paper, config, tmp_path):
     result["rows"][0]["y"] = -123
     with pytest.raises(ValueError, match="hash"):
         export_dataset(result, store, tmp_path / "export")
+
+
+@pytest.mark.parametrize("field", ["review_status", "series", "x_label", "y_label", "extraction_method", "figure_label", "paper_title", "doi"])
+def test_updated_csv_digest_cannot_hide_changed_evidence(paper, config, tmp_path, field):
+    store, _, f = paper
+    out = tmp_path / "bundle"
+    export_dataset(digitize(store, f["figure_id"], config), store, out)
+    rows = list(csv.DictReader(io.StringIO((out / "dataset.csv").read_text())))
+    rows[0][field] = "fabricated"
+    buf = io.StringIO()
+    writer = csv.DictWriter(buf, fieldnames=list(rows[0]), lineterminator="\n")
+    writer.writeheader()
+    writer.writerows(rows)
+    raw = buf.getvalue().encode()
+    (out / "dataset.csv").write_bytes(raw)
+    manifest = read_json(out / "manifest.json")
+    manifest["data"]["sha256"] = sha256(raw)
+    (out / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="provenance"):
+        verify_export(out, store)
+
+
+def test_source_metadata_must_match_retained_record(paper, config, tmp_path):
+    store, _, f = paper
+    out = tmp_path / "bundle"
+    export_dataset(digitize(store, f["figure_id"], config), store, out)
+    manifest = read_json(out / "manifest.json")
+    manifest["source"]["metadata"]["notes"] = "Invented source assertion"
+    (out / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(ValueError, match="Source metadata"):
+        verify_export(out, store)
+
+
+def test_log_underflow_is_rejected():
+    axis = Axis({"label": "x", "unit": "s", "scale": "log10", "anchors": [
+        {"pixel": 0, "value": 1, "pixel_uncertainty": 0},
+        {"pixel": 1, "value": 1e-300, "pixel_uncertainty": 0}]}, 3)
+    with pytest.raises(ValueError, match="underflows"):
+        axis.convert(2, 0)
