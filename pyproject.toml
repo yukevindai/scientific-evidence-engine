@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scientific-evidence-engine"
+version = "0.1.0"
+description = "Traceable figure digitization and evidence-grounded scientific research"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = ["numpy>=1.24", "Pillow>=10", "pypdfium2>=4.30", "pint>=0.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "reportlab>=4"]
+
+[project.scripts]
+evidence-engine = "scientific_evidence_engine.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
